@@ -27,95 +27,101 @@
       <div id="game-status">Play Selection</div>
     </div>
 
-    <!-- Playbook Overlay -->
-    <div id="playbook-menu">
-      <h1 id="playbook-title">Choose Play</h1>
-      <div class="play-options" id="playbook-options">
-        <!-- Buttons injected via JS -->
+    <!-- Mute Button -->
+    <button id="mute-btn" class="menu-btn"
+      style="position: absolute; top: 60px; right: 20px; z-index: 1000; padding: 4px 12px; font-size: 14px; pointer-events: auto;">🔊
+      MUTE</button>
+  </div>
+
+  <!-- Playbook Overlay -->
+  <div id="playbook-menu">
+    <h1 id="playbook-title">Choose Play</h1>
+    <div class="play-options" id="playbook-options">
+      <!-- Buttons injected via JS -->
+    </div>
+  </div>
+
+  <!-- Style Meters -->
+  <div id="style-meters" style="display:none;">
+    <div class="meter-container">
+      <div class="meter-label">UGL STYLE</div>
+      <div class="meter-track">
+        <div class="meter-fill" id="player-style-fill"></div>
       </div>
     </div>
-
-    <!-- Style Meters -->
-    <div id="style-meters" style="display:none;">
-      <div class="meter-container">
-        <div class="meter-label">UGL STYLE</div>
-        <div class="meter-track">
-          <div class="meter-fill" id="player-style-fill"></div>
-        </div>
-      </div>
-      <div class="meter-container text-right">
-        <div class="meter-label">CPU STYLE</div>
-        <div class="meter-track">
-          <div class="meter-fill" id="cpu-style-fill"></div>
-        </div>
+    <div class="meter-container text-right">
+      <div class="meter-label">CPU STYLE</div>
+      <div class="meter-track">
+        <div class="meter-fill" id="cpu-style-fill"></div>
       </div>
     </div>
+  </div>
 
-    <!-- Pass Icons Overlay (Phase 6) -->
-    <div id="pass-icons"
-      style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 15;">
-      <!-- Icons injected via JS -->
-    </div>
+  <!-- Pass Icons Overlay (Phase 6) -->
+  <div id="pass-icons"
+    style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 15;">
+    <!-- Icons injected via JS -->
+  </div>
 
-    <!-- Phase 5 UI Overlays -->
-    <div id="main-menu" class="fullscreen-menu">
-      <h1 class="neon-text">URBAN GRIDIRON</h1>
-      <button id="start-btn" class="menu-btn" style="margin-bottom: 20px;">PRESS START</button>
-      <button id="tutorial-btn" class="menu-btn"
-        style="font-size: 24px; padding: 10px 20px; border-color: #ffcc00; color: #ffcc00;">HOW TO PLAY</button>
-    </div>
+  <!-- Phase 5 UI Overlays -->
+  <div id="main-menu" class="fullscreen-menu">
+    <h1 class="neon-text">URBAN GRIDIRON</h1>
+    <button id="start-btn" class="menu-btn" style="margin-bottom: 20px;">PRESS START</button>
+    <button id="tutorial-btn" class="menu-btn"
+      style="font-size: 24px; padding: 10px 20px; border-color: #ffcc00; color: #ffcc00;">HOW TO PLAY</button>
+  </div>
 
-    <!-- Phase 6 Tutorial Overlay -->
-    <div id="tutorial-menu" class="fullscreen-menu" style="display:none; background: rgba(0,0,0,0.95);">
-      <h1 class="neon-text" style="font-size: 60px; margin-bottom: 20px;">STREET RULES</h1>
+  <!-- Phase 6 Tutorial Overlay -->
+  <div id="tutorial-menu" class="fullscreen-menu" style="display:none; background: rgba(0,0,0,0.95);">
+    <h1 class="neon-text" style="font-size: 60px; margin-bottom: 20px;">STREET RULES</h1>
 
-      <div class="roster-info" style="width: 800px; display: flex; justify-content: space-between;">
-        <div style="flex: 1; text-align: left;">
-          <h2 style="color: #00ffcc; margin-bottom: 10px;">CONTROLS</h2>
-          <ul style="font-size: 20px;">
-            <li><strong style="color: #ff3300;">W A S D :</strong> Move Player</li>
-            <li><strong style="color: #ff3300;">MOUSE :</strong> Look Around</li>
-            <li><strong style="color: #ff3300;">SHIFT :</strong> Sprint</li>
-            <li><strong style="color: #ff3300;">SPACE :</strong> Snap Ball / Jump</li>
-            <li><strong style="color: #ff3300;">LEFT CLICK :</strong> Bullet Pass</li>
-            <li><strong style="color: #ff3300;">RIGHT CLICK :</strong> Lob Pass</li>
-          </ul>
-        </div>
-        <div style="flex: 1; text-align: left; border-left: 2px solid #555; padding-left: 20px;">
-          <h2 style="color: #00ffcc; margin-bottom: 10px;">STREET MOVES</h2>
-          <ul style="font-size: 20px;">
-            <li><strong style="color: #ffcc00;">Q / E :</strong> Juke (Side Step)</li>
-            <li><strong style="color: #ffcc00;">F :</strong> Spin Move</li>
-            <li><strong style="color: #ffcc00;">SPACE (Sprinting) :</strong> Hurdle</li>
-            <li><strong style="color: #ffcc00;">SPACE (Mid-Air near Wall) :</strong> Wall Kick</li>
-            <li><strong style="color: #ff0055;">G :</strong> GAMEBREAKER (When meter is full)</li>
-          </ul>
-        </div>
-      </div>
-
-      <button id="close-tutorial-btn" class="menu-btn">GOT IT</button>
-    </div>
-
-    <div id="roster-menu" class="fullscreen-menu" style="display:none;">
-      <h1 class="neon-text">DRAFT CREW</h1>
-      <div class="roster-info">
-        <p>Choose your street captains.</p>
-        <ul>
-          <li>🔴 BRUISER: High Hit Power, Slow</li>
-          <li>🟠 ACROBAT: High Jump/Evade, Weak Tackle</li>
-          <li>🔵 CANNON: High Pass Speed, Average</li>
+    <div class="roster-info" style="width: 800px; display: flex; justify-content: space-between;">
+      <div style="flex: 1; text-align: left;">
+        <h2 style="color: #00ffcc; margin-bottom: 10px;">CONTROLS</h2>
+        <ul style="font-size: 20px;">
+          <li><strong style="color: #ff3300;">W A S D :</strong> Move Player</li>
+          <li><strong style="color: #ff3300;">MOUSE :</strong> Look Around</li>
+          <li><strong style="color: #ff3300;">SHIFT :</strong> Sprint</li>
+          <li><strong style="color: #ff3300;">SPACE :</strong> Snap Ball / Jump</li>
+          <li><strong style="color: #ff3300;">LEFT CLICK :</strong> Bullet Pass</li>
+          <li><strong style="color: #ff3300;">RIGHT CLICK :</strong> Lob Pass</li>
         </ul>
       </div>
-      <button id="draft-btn" class="menu-btn">TAKE THE STREETS</button>
+      <div style="flex: 1; text-align: left; border-left: 2px solid #555; padding-left: 20px;">
+        <h2 style="color: #00ffcc; margin-bottom: 10px;">STREET MOVES</h2>
+        <ul style="font-size: 20px;">
+          <li><strong style="color: #ffcc00;">Q / E :</strong> Juke (Side Step)</li>
+          <li><strong style="color: #ffcc00;">F :</strong> Spin Move</li>
+          <li><strong style="color: #ffcc00;">SPACE (Sprinting) :</strong> Hurdle</li>
+          <li><strong style="color: #ffcc00;">SPACE (Mid-Air near Wall) :</strong> Wall Kick</li>
+          <li><strong style="color: #ff0055;">G :</strong> GAMEBREAKER (When meter is full)</li>
+        </ul>
+      </div>
     </div>
 
-    <div id="touchdown-banner" class="fullscreen-menu touchdown" style="display:none;">
-    </div>
+    <button id="close-tutorial-btn" class="menu-btn">GOT IT</button>
+  </div>
 
-    <div id="game-over" class="fullscreen-menu" style="display:none;">
-      <h1 class="neon-text" id="go-msg">GAME OVER</h1>
-      <button id="rematch-btn" class="menu-btn">REMATCH</button>
+  <div id="roster-menu" class="fullscreen-menu" style="display:none;">
+    <h1 class="neon-text">DRAFT CREW</h1>
+    <div class="roster-info">
+      <p>Choose your street captains.</p>
+      <ul>
+        <li>🔴 BRUISER: High Hit Power, Slow</li>
+        <li>🟠 ACROBAT: High Jump/Evade, Weak Tackle</li>
+        <li>🔵 CANNON: High Pass Speed, Average</li>
+      </ul>
     </div>
+    <button id="draft-btn" class="menu-btn">TAKE THE STREETS</button>
+  </div>
+
+  <div id="touchdown-banner" class="fullscreen-menu touchdown" style="display:none;">
+  </div>
+
+  <div id="game-over" class="fullscreen-menu" style="display:none;">
+    <h1 class="neon-text" id="go-msg">GAME OVER</h1>
+    <button id="rematch-btn" class="menu-btn">REMATCH</button>
+  </div>
 
   </div>
 

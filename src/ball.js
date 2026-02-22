@@ -70,12 +70,15 @@ export class Football {
         this.body.type = CANNON.Body.DYNAMIC;
         this.body.collisionFilterMask = 1; // Re-enable collisions
 
+        // Convert CANNON.Vec3 → THREE.Vector3 so distanceTo/subVectors work
+        const target = new THREE.Vector3(targetVector3.x, targetVector3.y, targetVector3.z);
+
         // Calculate pass trajectory
         const origin = new THREE.Vector3().copy(this.mesh.position);
-        const distance = origin.distanceTo(targetVector3);
+        const distance = origin.distanceTo(target);
 
         // Projectile motion arc calculation
-        const direction = new THREE.Vector3().subVectors(targetVector3, origin);
+        const direction = new THREE.Vector3().subVectors(target, origin);
         direction.y = 0;
         direction.normalize();
 

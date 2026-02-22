@@ -1,5 +1,6 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
+import { GameState } from './gameFlow.js';
 
 // Basic AI states
 export const AIState = {
@@ -55,8 +56,7 @@ export class AIManager {
     }
 
     update(players, deltaTime, gameManager, ball) {
-        // GameState 4 is LIVE_ACTION
-        if (gameManager.currentState !== 4) {
+        if (gameManager.currentState !== GameState.LIVE_ACTION) {
             // Stop moving
             players.forEach(p => {
                 if (!p.isPlayer) {

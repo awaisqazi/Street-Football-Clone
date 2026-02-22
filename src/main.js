@@ -139,6 +139,14 @@ function init() {
     });
   });
 
+  // Mute Button Logic
+  const muteBtn = document.getElementById('mute-btn');
+  muteBtn.addEventListener('click', () => {
+    audioManager.resume(); // Ensure AudioContext is running (browser autoplay policy)
+    const isMuted = audioManager.toggleMute();
+    muteBtn.innerText = isMuted ? "🔇 UNMUTE" : "🔊 MUTE";
+  });
+
   animate();
 }
 
@@ -267,9 +275,8 @@ function attemptPassToKey(key) {
   const isLob = Input.keys.shift;
   ball.pass(leadPos, isLob); // Let ball.js handle the math
 
-  // Switch player control instantly
-  allPlayers.forEach(p => p.isPlayer = false);
-  receiver.isPlayer = true;
+  // Do NOT switch control here — let the receiver's AI continue running
+  // the route. Control transfers on catch (see catching logic below).
 
   // Consume the input key
   Input.keys[key] = false;
@@ -372,7 +379,13 @@ function animate() {
     if (gameManager.currentState === GameState.LIVE_ACTION && !ball.isHeld) {
       // Check for catches
       for (let p of allPlayers) {
-        if (p.mesh.position.distanceToSquared(ball.mesh.position) < 4) { // ~2 meters
+        // Cylinder hitbox: 2.5 units on XZ plane, ball Y between 0 and player head + 4
+        const dx = p.mesh.position.x - ball.mesh.position.x;
+        const dz = p.mesh.position.z - ball.mesh.position.z;
+        const dist2D = Math.sqrt(dx * dx + dz * dz);
+        const ballY = ball.mesh.position.y;
+        const playerY = p.mesh.position.y;
+        if (dist2D < 2.5 && ballY >= 0 && ballY <= playerY + 4) {
           ball.snapToCarrier(p);
           console.log("PASS CAUGHT by", p.team);
 

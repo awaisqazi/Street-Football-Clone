@@ -2,7 +2,17 @@
 export class AudioManager {
     constructor() {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.connect(this.ctx.destination);
+        this.masterGain.gain.value = 1.0;
+        this.isMuted = false;
         this.bgmPlaying = false;
+    }
+
+    toggleMute() {
+        this.isMuted = !this.isMuted;
+        this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 1.0, this.ctx.currentTime, 0.1);
+        return this.isMuted;
     }
 
     resume() {
@@ -27,7 +37,7 @@ export class AudioManager {
             gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
 
             osc.connect(gain);
-            gain.connect(this.ctx.destination);
+            gain.connect(this.masterGain);
 
             osc.start(time);
             osc.stop(time + dur);
@@ -71,7 +81,7 @@ export class AudioManager {
         gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
 
         osc.connect(gain);
-        gain.connect(this.ctx.destination);
+        gain.connect(this.masterGain);
 
         osc.start();
         osc.stop(this.ctx.currentTime + 0.3);
@@ -92,7 +102,7 @@ export class AudioManager {
         gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.5);
 
         osc.connect(gain);
-        gain.connect(this.ctx.destination);
+        gain.connect(this.masterGain);
 
         osc.start();
         osc.stop(this.ctx.currentTime + 0.5);

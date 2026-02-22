@@ -7,6 +7,8 @@ export const GameState = {
     GAME_OVER: 4
 };
 
+import { Playbook } from './playbook.js';
+
 export class GameManager {
     constructor() {
         this.currentState = GameState.MAIN_MENU;

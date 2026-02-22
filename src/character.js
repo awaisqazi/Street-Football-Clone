@@ -171,13 +171,6 @@ export class PlayerCharacter {
             }
         }
 
-        if (this.isPlayer) {
-            if (!this.isEvading) {
-                // Stop regular WASD input while juking/spinning so the animation plays out
-                this.handleInput(deltaTime, camera);
-            }
-        }
-
         // Sync visuals to physics
         this.mesh.position.copy(this.body.position);
         this.mesh.position.y -= 1; // Offset center so bottom of cylinder touches ground
@@ -194,6 +187,9 @@ export class PlayerCharacter {
     }
 
     handleInput(deltaTime, camera) {
+        // Prevent new input while currently executing a juke/spin
+        if (this.isEvading) return;
+
         // 1. Calculate movement relative to camera angle
         this.velocity.set(0, 0, 0);
 
@@ -270,7 +266,10 @@ export class PlayerCharacter {
         }
 
         // Jumping & Hurdling
-        if (Input.keys.space) {
+        // We ensure snapping is clean by checking a global flag or tracking
+        // But since we removed the handleInput call from update, the issue the user saw
+        // might have just been my manual test. Let's ensure this is clean.
+        if (Input.keys.space && !window.blockJumpThisFrame) {
             if (this.canJump) {
                 // Hurdle if sprinting
                 const isHurdle = Input.keys.shift;

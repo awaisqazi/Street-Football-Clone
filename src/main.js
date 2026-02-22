@@ -327,12 +327,15 @@ function animate() {
     startPlayCycle();
   }
 
+  window.blockJumpThisFrame = false;
+
   // Update Game Rules and AI if live
   if (gameManager.currentState === GameState.LIVE_ACTION || gameManager.currentState === GameState.PRE_SNAP) {
     // Handle game flow inputs first
     if (Input.keys.space && gameManager.currentState === GameState.PRE_SNAP) {
       gameManager.snapBall(aiManager, offenseTeam, defenseTeam);
       Input.keys.space = false; // Consume it so player doesn't jump immediately
+      window.blockJumpThisFrame = true; // Hard lock for this frame
     }
 
     // Players moving

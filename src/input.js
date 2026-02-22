@@ -18,6 +18,7 @@ export const Input = {
         n: false, // Pass receiver 6
         space: false, // Jump / Hurdle
         shift: false, // Sprint / Tackle modifier
+        alt: false,   // Pitch / Lateral
     },
     keyPressStart: {},       // Timestamp when a pass key was pressed
     keyReleasedDuration: {}, // Duration (ms) a pass key was held before release
@@ -33,6 +34,7 @@ export const Input = {
             if (this.keys.hasOwnProperty(key)) this.keys[key] = true;
             if (e.key === 'Shift') this.keys.shift = true;
             if (e.key === ' ') this.keys.space = true;
+            if (e.key === 'Alt') { this.keys.alt = true; e.preventDefault(); }
 
             // Track press start time for pass keys (only on initial press)
             if (PASS_KEYS.includes(key) && !this.keyPressStart[key]) {
@@ -45,6 +47,7 @@ export const Input = {
             if (this.keys.hasOwnProperty(key)) this.keys[key] = false;
             if (e.key === 'Shift') this.keys.shift = false;
             if (e.key === ' ') this.keys.space = false;
+            if (e.key === 'Alt') this.keys.alt = false;
 
             // Calculate hold duration for pass keys
             if (PASS_KEYS.includes(key) && this.keyPressStart[key]) {

@@ -248,6 +248,24 @@ export class PlayerCharacter {
             return;
         }
 
+        // Power Move (Right Click)
+        if (Input.mouse.rightDown && this.canJump) {
+            this.isEvading = true;
+            if (this.team === 'offense') {
+                // Stiff Arm — keeps momentum, blocks tackle via evasion
+                this.evasionTimer = 0.5;
+                this.lastEvasion = 'stiff_arm';
+            } else {
+                // Rip Move — shed blocks with a burst forward
+                this.evasionTimer = 0.5;
+                this.lastEvasion = 'rip_move';
+                this.body.velocity.x += forward.x * 20;
+                this.body.velocity.z += forward.z * 20;
+            }
+            Input.mouse.rightDown = false; // Consume
+            return;
+        }
+
         // Wall Raycasting logic for Wall Jumps
         let wallForward = false;
         if (!this.canJump) {

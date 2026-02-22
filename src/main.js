@@ -427,6 +427,50 @@ function animate() {
           break; // Only one throw per frame
         }
       }
+
+      // Pitch / Lateral (Alt key)
+      if (Input.keys.alt && ball.isHeld && ball.carrier && ball.carrier.isPlayer) {
+        const carrier = ball.carrier;
+        const dirSign = gameManager.possession === 'player' ? -1 : 1; // Player drives -Z
+
+        // Find closest teammate who is BEHIND the carrier (trailing)
+        const myTeam = gameManager.possession === 'player' ? playerTeam : cpuTeam;
+        let bestMate = null;
+        let bestDist = Infinity;
+
+        for (const mate of myTeam) {
+          if (mate === carrier) continue;
+          // "Behind" = higher Z for player (drives -Z), lower Z for CPU (drives +Z)
+          const isBehind = dirSign === -1
+            ? mate.body.position.z > carrier.body.position.z
+            : mate.body.position.z < carrier.body.position.z;
+          if (!isBehind) continue;
+
+          const dx = mate.body.position.x - carrier.body.position.x;
+          const dz = mate.body.position.z - carrier.body.position.z;
+          const dist = dx * dx + dz * dz;
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestMate = mate;
+          }
+        }
+
+        if (bestMate) {
+          const tPos = bestMate.body.position;
+          const leadPos = new CANNON.Vec3(
+            tPos.x + bestMate.body.velocity.x * 0.3,
+            tPos.y,
+            tPos.z + bestMate.body.velocity.z * 0.3
+          );
+
+          lastThrower = carrier;
+          ball.pass(leadPos, true); // Always lob for pitches
+          passFlightTimer = 0.3;
+          console.log("LATERAL!");
+        }
+
+        Input.keys.alt = false; // Consume
+      }
     }
 
     // Ball
@@ -467,9 +511,38 @@ function animate() {
       }
 
       // Check for incomplete pass (hits ground before caught)
-      if (!ball.isHeld && ball.body.position.y < 0.5) {
+      if (!ball.isHeld && !ball.isFumbled && ball.body.position.y < 0.5) {
         console.log("INCOMPLETE PASS!");
         gameManager.endPlay(gameManager.lineOfScrimmageZ); // Ends play at original LOS
+      }
+    }
+
+    // Fumble Recovery
+    if (gameManager.currentState === GameState.LIVE_ACTION && ball.isFumbled) {
+      for (let p of allPlayers) {
+        const dx = p.mesh.position.x - ball.mesh.position.x;
+        const dz = p.mesh.position.z - ball.mesh.position.z;
+        const dist2D = Math.sqrt(dx * dx + dz * dz);
+        const ballY = ball.mesh.position.y;
+        // Must be close and ball near ground level
+        if (dist2D < 2.5 && ballY < 3) {
+          ball.snapToCarrier(p);
+          ball.isFumbled = false;
+          console.log("FUMBLE RECOVERED by", p.team);
+
+          // Switch possession if the recovering team is different
+          const recovererIsPlayer = playerTeam.includes(p);
+          if ((recovererIsPlayer && gameManager.possession === 'cpu') ||
+            (!recovererIsPlayer && gameManager.possession === 'player')) {
+            gameManager.flipPossession();
+            console.log("TURNOVER ON FUMBLE!");
+          }
+
+          // Give control to the recoverer
+          allPlayers.forEach(ap => ap.isPlayer = false);
+          p.isPlayer = true;
+          break;
+        }
       }
     }
 

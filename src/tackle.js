@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { AIState } from './ai.js';
 
 export function setupTackling(world, players, ball, styleManager, audioManager) {
     // A simple collision listener to detect tackles
@@ -40,24 +41,65 @@ export function setupTackling(world, players, ball, styleManager, audioManager) 
 
             // Check for Evasive Moves (Missed Tackle)
             if (carrier.isEvading) {
-                if (carrier.lastEvasion !== 'hurdle' || tackler.body.velocity.y > 0) {
+                // Stiff Arm — attribute contest: carrier.runPower vs tackler.tackling
+                if (carrier.lastEvasion === 'stiff_arm') {
+                    const runPower = carrier.archetype.runPower || 10;
+                    const tackling = tackler.archetype.tackling || 10;
+                    if (runPower > tackling) {
+                        // Stiff arm wins — knock tackler back
+                        applyArcadeKnockback(carrier, tackler);
+                        if (styleManager && carrier.isPlayer) styleManager.addStylePoints('player', 2000, "STIFF ARM!", carrier.mesh.position);
+                        return;
+                    }
+                    // Stiff arm fails — fall through to standard tackle
+                } else if (carrier.lastEvasion !== 'hurdle' || tackler.body.velocity.y > 0) {
                     if (styleManager && carrier.isPlayer) styleManager.addStylePoints('player', 1500, carrier.lastEvasion.toUpperCase() + "!", carrier.mesh.position);
                     return; // Carrier dodged
                 }
             }
 
             // Standard Tackle
-            carrier.isDown = true;
             if (audioManager) audioManager.playTackle();
 
-            // Hit Stick logic (Exaggerated knockback for style/fumble)
+            // Hit Stick logic (Exaggerated knockback + fumble chance)
             const vlsSqTackler = tackler.body.velocity.lengthSquared();
             if (vlsSqTackler > 600) {
                 applyArcadeKnockback(tackler, carrier);
                 if (styleManager && tackler.isPlayer) styleManager.addStylePoints('player', 2500, "HIT STICK!", tackler.mesh.position);
+
+                // Fumble roll: tackler.tackling vs carrier.carrying
+                const tacklingAttr = tackler.archetype.tackling || 10;
+                const carryingAttr = carrier.archetype.carrying || 10;
+                if (Math.random() * 20 + tacklingAttr > carryingAttr + 10) {
+                    // FUMBLE!
+                    ball.isFumbled = true;
+                    ball.isHeld = false;
+                    ball.carrier = null;
+                    ball.body.type = 2; // CANNON.Body.DYNAMIC
+                    ball.body.collisionFilterMask = 1;
+
+                    // Chaotic bounce impulse
+                    ball.body.velocity.set(
+                        (Math.random() - 0.5) * 20,
+                        8 + Math.random() * 5,
+                        (Math.random() - 0.5) * 20
+                    );
+                    ball.body.angularVelocity.set(
+                        Math.random() * 15,
+                        Math.random() * 10,
+                        Math.random() * 15
+                    );
+
+                    if (styleManager && tackler.isPlayer) styleManager.addStylePoints('player', 3000, "FUMBLE!", tackler.mesh.position);
+                    console.log("FUMBLE! Ball is loose!");
+                    return; // Don't end the play — ball is live
+                }
             }
+
+            // No fumble — normal tackle, blow the play dead
+            carrier.isDown = true;
         } else {
-            // Non-carrier collisions (blocking, etc.)
+            // Non-carrier collisions (blocking, rip moves, etc.)
             const vlsSqA = charA.body.velocity.lengthSquared();
             const vlsSqB = charB.body.velocity.lengthSquared();
             const sprintThresholdSquared = 600;
@@ -69,6 +111,25 @@ export function setupTackling(world, players, ball, styleManager, audioManager) 
                 applyArcadeKnockback(charB, charA, true);
                 return;
             }
+
+            // Rip Move vs Blocker — attribute contest: dMoves vs blocking
+            const ripVsBlock = (attacker, blocker) => {
+                if (attacker.isEvading && attacker.lastEvasion === 'rip_move' &&
+                    blocker.aiState === AIState.BLOCK) {
+                    const dMoves = attacker.archetype.dMoves || 10;
+                    const blocking = blocker.archetype.blocking || 10;
+                    if (dMoves > blocking) {
+                        applyArcadeKnockback(attacker, blocker);
+                        if (styleManager && attacker.isPlayer) styleManager.addStylePoints('player', 1500, "RIP MOVE!", attacker.mesh.position);
+                    } else {
+                        applyArcadeKnockback(blocker, attacker);
+                    }
+                    return true;
+                }
+                return false;
+            };
+
+            if (ripVsBlock(charA, charB) || ripVsBlock(charB, charA)) return;
 
             if (vlsSqA > sprintThresholdSquared && vlsSqA > vlsSqB) {
                 applyArcadeKnockback(charA, charB);

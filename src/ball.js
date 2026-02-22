@@ -8,6 +8,7 @@ export class Football {
 
         this.isHeld = true; // Starts snapped to a player
         this.carrier = null;
+        this.isFumbled = false;
 
         this.createVisuals();
         this.createPhysics();

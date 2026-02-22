@@ -9,12 +9,13 @@ export class PlayerCharacter {
         this.isPlayer = isPlayer;
 
         // Store the archetype / position
-        this.archetype = archetype || { name: 'Default', radius: 1, height: 2, mass: 80, color: 0xff0000, speed_attr: 10, agility: 10 };
+        this.archetype = archetype || { name: 'Default', radius: 1, height: 2, mass: 80, color: 0xff0000, speed: 85, acceleration: 150, jumpPower: 15 };
 
-        // Derive physics stats from RPG attributes (with legacy fallback)
-        this.speed = this.archetype.speed_attr !== undefined ? this.archetype.speed_attr * 5 : (this.archetype.speed || 85);
-        this.acceleration = this.archetype.agility !== undefined ? this.archetype.agility * 10 : (this.archetype.acceleration || 150);
-        this.jumpPower = this.archetype.agility !== undefined ? this.archetype.agility : (this.archetype.jumpPower || 15);
+        // Use tuned legacy physics values (speed, acceleration, jumpPower) from Positions
+        // RPG attributes (speed_attr, agility, catching, etc.) are available on this.archetype for game logic
+        this.speed = this.archetype.speed || 85;
+        this.acceleration = this.archetype.acceleration || 150;
+        this.jumpPower = this.archetype.jumpPower || 15;
 
         // State
         this.canJump = false;

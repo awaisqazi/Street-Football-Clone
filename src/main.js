@@ -290,6 +290,9 @@ function updateCamera() {
   camera.lookAt(camera.lookAtTarget);
 }
 
+let passFlightTimer = 0; // Grace period so ball can actually travel before catches
+let lastThrower = null;  // Track who threw to exclude them from catching
+
 function attemptPassToKey(key) {
   const receiver = offenseTeam.find(p => p.passKey === key);
   if (!receiver) return;
@@ -302,8 +305,10 @@ function attemptPassToKey(key) {
     targetPos.z + receiver.body.velocity.z * 0.5
   );
 
+  lastThrower = ball.carrier; // Remember who threw it
   const isLob = Input.keys.shift;
   ball.pass(leadPos, isLob); // Let ball.js handle the math
+  passFlightTimer = 0.3; // 0.3 second grace period for ball to travel
 
   // Do NOT switch control here — let the receiver's AI continue running
   // the route. Control transfers on catch (see catching logic below).
@@ -425,17 +430,21 @@ function animate() {
     // Ball
     ball.update();
 
-    // Catching & Incomplete Logic (Pillar 5)
-    if (gameManager.currentState === GameState.LIVE_ACTION && !ball.isHeld) {
+    // Count down pass flight timer
+    if (passFlightTimer > 0) passFlightTimer -= dt;
+
+    // Catching & Incomplete Logic (Pillar 5) — only check after flight grace period
+    if (gameManager.currentState === GameState.LIVE_ACTION && !ball.isHeld && passFlightTimer <= 0) {
       // Check for catches
       for (let p of allPlayers) {
-        // Cylinder hitbox: 2.5 units on XZ plane, ball Y between 0 and player head + 4
+        if (p === lastThrower) continue; // Thrower can't catch their own pass
+        // Cylinder hitbox: 4 units on XZ plane, ball Y between 0 and player head + 6
         const dx = p.mesh.position.x - ball.mesh.position.x;
         const dz = p.mesh.position.z - ball.mesh.position.z;
         const dist2D = Math.sqrt(dx * dx + dz * dz);
         const ballY = ball.mesh.position.y;
         const playerY = p.mesh.position.y;
-        if (dist2D < 2.5 && ballY >= 0 && ballY <= playerY + 4) {
+        if (dist2D < 4.0 && ballY >= 0 && ballY <= playerY + 6) {
           ball.snapToCarrier(p);
           console.log("PASS CAUGHT by", p.team);
 

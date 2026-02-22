@@ -15,7 +15,7 @@ export class GameManager {
 
         // Football Rules State
         this.lineOfScrimmageZ = 0; // Center field
-        this.firstDownZ = 10; // 10 yards ahead
+        this.firstDownZ = -10; // 10 yards ahead (negative Z = forward for player)
         this.down = 1;
         this.yardsToGlow = 10;
 
@@ -85,7 +85,8 @@ export class GameManager {
         console.log("Whistle blown! Ball spotted at Z: " + tackleZ);
 
         // Simplistic arcade football logic
-        const yardsGained = this.possession === 'player' ? tackleZ - this.lineOfScrimmageZ : this.lineOfScrimmageZ - tackleZ; // Assuming Player drives +Z, CPU drives -Z
+        // Player drives -Z (forward), CPU drives +Z
+        const yardsGained = this.possession === 'player' ? this.lineOfScrimmageZ - tackleZ : tackleZ - this.lineOfScrimmageZ;
 
         this.lineOfScrimmageZ = tackleZ;
         this.yardsToGlow -= yardsGained;
@@ -94,7 +95,7 @@ export class GameManager {
         if (this.yardsToGlow <= 0) {
             this.down = 1;
             this.yardsToGlow = 10;
-            this.firstDownZ = this.possession === 'player' ? this.lineOfScrimmageZ + 10 : this.lineOfScrimmageZ - 10;
+            this.firstDownZ = this.possession === 'player' ? this.lineOfScrimmageZ - 10 : this.lineOfScrimmageZ + 10;
             console.log("FIRST DOWN!");
         } else {
             this.down++;
@@ -120,7 +121,7 @@ export class GameManager {
         this.possession = this.possession === 'player' ? 'cpu' : 'player';
         this.down = 1;
         this.yardsToGlow = 10;
-        this.firstDownZ = this.possession === 'player' ? this.lineOfScrimmageZ + 10 : this.lineOfScrimmageZ - 10;
+        this.firstDownZ = this.possession === 'player' ? this.lineOfScrimmageZ - 10 : this.lineOfScrimmageZ + 10;
     }
 
     checkTouchdown(carrierPos, audioManager, uiManager) {

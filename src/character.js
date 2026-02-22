@@ -8,13 +8,13 @@ export class PlayerCharacter {
         this.scene = scene;
         this.isPlayer = isPlayer;
 
-        // Store the archetype
-        this.archetype = archetype || { name: 'Default', speed: 85, acceleration: 150, jumpPower: 15, mass: 80, radius: 1, height: 2, color: 0xff0000 };
+        // Store the archetype / position
+        this.archetype = archetype || { name: 'Default', radius: 1, height: 2, mass: 80, color: 0xff0000, speed_attr: 10, agility: 10 };
 
-        // Stats from archetype
-        this.speed = this.archetype.speed;
-        this.acceleration = this.archetype.acceleration;
-        this.jumpPower = this.archetype.jumpPower;
+        // Derive physics stats from RPG attributes (with legacy fallback)
+        this.speed = this.archetype.speed_attr !== undefined ? this.archetype.speed_attr * 5 : (this.archetype.speed || 85);
+        this.acceleration = this.archetype.agility !== undefined ? this.archetype.agility * 10 : (this.archetype.acceleration || 150);
+        this.jumpPower = this.archetype.agility !== undefined ? this.archetype.agility : (this.archetype.jumpPower || 15);
 
         // State
         this.canJump = false;
@@ -251,7 +251,9 @@ export class PlayerCharacter {
 
             // Apply street arcade acceleration
             const speedMultiplier = this.isGamebreakerActive ? 2.0 : 1.0;
-            const activeSpeed = (Input.keys.shift ? this.speed * 1.5 : this.speed) * speedMultiplier;
+            // Sprint only works if team has turbo remaining
+            const canSprint = Input.keys.shift && this._turboRef && this._turboRef() > 0;
+            const activeSpeed = (canSprint ? this.speed * 1.5 : this.speed) * speedMultiplier;
 
             // We alter the Cannon body velocity directly for snappy arcade response instead of using applyForce
             this.body.velocity.x = moveDirection.x * activeSpeed * deltaTime * 10;

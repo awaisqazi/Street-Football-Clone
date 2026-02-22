@@ -11,7 +11,7 @@ import { UIManager } from './ui.js';
 import { Playbook } from './playbook.js';
 import { AIManager } from './ai.js';
 import { StyleManager } from './stylePoints.js';
-import { Archetypes } from './roster.js';
+import { Positions } from './roster.js';
 import { AudioManager } from './audio.js';
 
 let scene, camera, renderer, clock;
@@ -23,13 +23,33 @@ const passKeys = ['z', 'x', 'c', 'v', 'b', 'n'];
 let gameManager, uiManager, aiManager, styleManager, audioManager;
 let ball;
 
-// Teams
+// Ironman Teams — persistent 7-man rosters that play both sides
+let playerTeam = [];
+let cpuTeam = [];
+let allPlayers = [];
+
+// Derived per-play (set in startPlayCycle)
 let offenseTeam = [];
 let defenseTeam = [];
-let allPlayers = [];
 
 // Field markers
 let losMarker, firstDownMarker;
+
+// Community Turbo — shared sprint meter per team (0–100)
+export let turbo = { player: 100, cpu: 100 };
+const TURBO_DRAIN_RATE = 30;   // units per second while sprinting
+const TURBO_RECHARGE_RATE = 15; // units per second while not sprinting
+
+// Standard 7-man street composition
+const TEAM_COMPOSITION = [
+  Positions.QB,
+  Positions.RB,
+  Positions.WR,
+  Positions.WR,
+  Positions.OL,
+  Positions.LB,
+  Positions.DB
+];
 
 function init() {
   const container = document.getElementById('game-container');
@@ -93,18 +113,17 @@ function init() {
   window.addEventListener('resize', onWindowResize);
   clock = new THREE.Clock();
 
-  // Raycaster pass logic removed (Pillar 3)
-
   // Player Switching & Gamebreaker
   window.addEventListener('keydown', (e) => {
     // Defense player switching (Pillar 2)
     if ((e.code === 'Space' || e.code === 'Tab') && gameManager.possession === 'cpu' && gameManager.currentState === GameState.LIVE_ACTION) {
       e.preventDefault();
 
-      // Find closest defender to the ball
+      // Find closest defender to the ball (player's team is on defense when CPU has possession)
       let closest = null;
       let minDistance = Infinity;
-      defenseTeam.forEach(d => {
+      const myDefenders = allPlayers.filter(p => p.team === 'defense');
+      myDefenders.forEach(d => {
         const dist = d.mesh.position.distanceToSquared(ball.mesh.position);
         if (dist < minDistance) {
           minDistance = dist;
@@ -121,7 +140,7 @@ function init() {
     if (e.code === 'KeyG' && gameManager.currentState === GameState.LIVE_ACTION) {
       if (styleManager.activateGamebreaker('player')) {
         allPlayers.forEach(p => {
-          if (p.isPlayer || offenseTeam.includes(p)) {
+          if (p.isPlayer || playerTeam.includes(p)) {
             p.setGamebreaker(true);
           }
         });
@@ -151,40 +170,26 @@ function init() {
 }
 
 function setupTeams() {
-  // Clear old
+  // Clear old players if any
   allPlayers.forEach(p => { world.removeBody(p.body); scene.remove(p.mesh); });
-  allPlayers = []; offenseTeam = []; defenseTeam = [];
+  allPlayers = []; playerTeam = []; cpuTeam = [];
 
-  // Spawn 7 Offense (Red)
+  // Spawn 7 persistent Player Team (using position colors)
   for (let i = 0; i < 7; i++) {
-    // Player 0 is QB
-    const isQB = (i === 0 && gameManager.possession === 'player');
-
-    let arch = Archetypes.BRUISER; // Default Linemen
-    if (i === 0) arch = Archetypes.CANNON; // QB
-    else if (i > 3) arch = Archetypes.ACROBAT; // WR/DB
-
-    const p = new PlayerCharacter(scene, new CANNON.Vec3(0, 5, 0), arch, isQB);
-    p.team = 'offense'; // Tag for tackle logic
-    // Assign pass key to receivers
-    if (i > 0) p.passKey = passKeys[i - 1];
-    offenseTeam.push(p);
+    const pos = TEAM_COMPOSITION[i];
+    const p = new PlayerCharacter(scene, new CANNON.Vec3(0, 5, 0), pos, false);
+    p._turboRef = () => turbo.player; // Callback to read team turbo
+    playerTeam.push(p);
     allPlayers.push(p);
   }
 
-  // Spawn 7 Defense (Blue)
+  // Spawn 7 persistent CPU Team (blue tint over position colors)
   for (let i = 0; i < 7; i++) {
-    const isDefUser = (i === 4 && gameManager.possession === 'cpu'); // Random defender is user
-
-    let arch = Archetypes.BRUISER;
-    if (i === 0) arch = Archetypes.CANNON;
-    else if (i > 3) arch = Archetypes.ACROBAT;
-
-    const defArch = { ...arch, color: 0x0000ff };
-
-    const p = new PlayerCharacter(scene, new CANNON.Vec3(0, 5, 0), defArch, isDefUser);
-    p.team = 'defense'; // Tag for tackle logic
-    defenseTeam.push(p);
+    const pos = TEAM_COMPOSITION[i];
+    const cpuArch = { ...pos, color: 0x0000ff }; // Override to blue for CPU
+    const p = new PlayerCharacter(scene, new CANNON.Vec3(0, 5, 0), cpuArch, false);
+    p._turboRef = () => turbo.cpu; // Callback to read team turbo
+    cpuTeam.push(p);
     allPlayers.push(p);
   }
 
@@ -192,13 +197,38 @@ function setupTeams() {
 }
 
 function startPlayCycle() {
+  // Determine which team is offense/defense based on possession
+  const playerOnOffense = gameManager.possession === 'player';
+
+  offenseTeam = playerOnOffense ? playerTeam : cpuTeam;
+  defenseTeam = playerOnOffense ? cpuTeam : playerTeam;
+
+  // Assign team roles dynamically
+  offenseTeam.forEach(p => { p.team = 'offense'; p.isDown = false; });
+  defenseTeam.forEach(p => { p.team = 'defense'; p.isDown = false; });
+
+  // Assign pass keys to non-QB offensive players
+  offenseTeam.forEach((p, i) => {
+    p.passKey = i > 0 ? passKeys[i - 1] : null;
+  });
+  defenseTeam.forEach(p => { p.passKey = null; });
+
+  // Set user control
+  allPlayers.forEach(p => p.isPlayer = false);
+  if (playerOnOffense) {
+    offenseTeam[0].isPlayer = true; // Player controls QB on offense
+  } else {
+    // Player controls a defender (LB at index 5)
+    defenseTeam[5].isPlayer = true;
+  }
+
   // Move markers
   losMarker.position.z = gameManager.lineOfScrimmageZ;
   firstDownMarker.position.z = gameManager.firstDownZ;
 
   // Place players at LOS
   const los = gameManager.lineOfScrimmageZ;
-  const dirOffense = gameManager.possession === 'player' ? -1 : 1; // Negative Z is forward for player offensive drive
+  const dirOffense = playerOnOffense ? -1 : 1; // Negative Z is forward for player offensive drive
 
   // Offense (QB back 5 yards, others spread on LOS)
   offenseTeam[0].body.position.set(0, 2, los - (5 * dirOffense));
@@ -297,7 +327,7 @@ function updatePassIcons() {
 
   for (let i = 1; i < offenseTeam.length; i++) {
     const receiver = offenseTeam[i];
-    if (receiver.isDown) continue; // Don't show icon if tackled/fallen
+    if (receiver.isDown || !receiver.passKey) continue;
 
     // Project 3D position to 2D screen coordinates
     const pos = receiver.mesh.position.clone();
@@ -354,6 +384,26 @@ function animate() {
         // Pre-snap logic
         p.body.velocity.set(0, 0, 0);
         p.update(dt, camera);
+      }
+    }
+
+    // Community Turbo — deplete while sprinting, recharge when idle
+    if (gameManager.currentState === GameState.LIVE_ACTION) {
+      const activePlayer = allPlayers.find(p => p.isPlayer);
+      const teamKey = playerTeam.includes(activePlayer) ? 'player' : 'cpu';
+      const isMoving = activePlayer && (Math.abs(activePlayer.body.velocity.x) > 0.5 || Math.abs(activePlayer.body.velocity.z) > 0.5);
+
+      if (Input.keys.shift && isMoving && turbo[teamKey] > 0) {
+        turbo[teamKey] = Math.max(0, turbo[teamKey] - TURBO_DRAIN_RATE * dt);
+      } else {
+        turbo[teamKey] = Math.min(100, turbo[teamKey] + TURBO_RECHARGE_RATE * dt);
+      }
+
+      // Update turbo meter UI
+      const turboFill = document.getElementById('turbo-fill');
+      if (turboFill) {
+        turboFill.style.width = turbo.player + '%';
+        turboFill.classList.toggle('depleted', turbo.player <= 0);
       }
     }
 

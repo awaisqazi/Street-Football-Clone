@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { world, physicsMaterials } from './physics.js';
+import { world, physicsMaterials, currentSurface } from './physics.js';
 import { Input } from './input.js';
 
 export class PlayerCharacter {
@@ -27,6 +27,8 @@ export class PlayerCharacter {
         this.isEvading = false;
         this.evasionTimer = 0;
         this.lastEvasion = ''; // To track which evasion move was performed
+        this.isStyling = false;
+        this.rotationLocked = false;
 
         this.createVisuals();
         this.createPhysics(startPosition);
@@ -176,8 +178,8 @@ export class PlayerCharacter {
         this.mesh.position.copy(this.body.position);
         this.mesh.position.y -= 1; // Offset center so bottom of cylinder touches ground
 
-        // Smooth rotation towards velocity direction (unless spinning)
-        if (this.velocity.lengthSq() > 0.1 && !this.isEvading) {
+        // Smooth rotation towards velocity direction (unless spinning or rotation-locked)
+        if (this.velocity.lengthSq() > 0.1 && !this.isEvading && !this.rotationLocked) {
             const targetAngle = Math.atan2(this.velocity.x, this.velocity.z);
             // Simple snappy rotation
             this.mesh.rotation.y = targetAngle;
@@ -187,9 +189,15 @@ export class PlayerCharacter {
         }
     }
 
-    handleInput(deltaTime, camera) {
+    handleInput(deltaTime, camera, allPlayers) {
+        // Reset styling flag each frame
+        this.isStyling = false;
+
         // Prevent new input while currently executing a juke/spin
         if (this.isEvading) return;
+
+        // Reset rotation lock when not evading
+        this.rotationLocked = false;
 
         // 1. Calculate movement relative to camera angle
         this.velocity.set(0, 0, 0);
@@ -207,31 +215,73 @@ export class PlayerCharacter {
         forward.normalize();
         const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
 
-        // Evasive Moves (Juke)
-        if (this.canJump && (Input.keys.q || Input.keys.e)) {
+        // --- Helper: find nearest opponent distance ---
+        const _findNearestOpponentDist = () => {
+            let minDist = Infinity;
+            if (!allPlayers) return minDist;
+            const myPos = this.body.position;
+            for (const p of allPlayers) {
+                if (p === this || p.team === this.team) continue;
+                const dx = p.body.position.x - myPos.x;
+                const dz = p.body.position.z - myPos.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < minDist) minDist = dist;
+            }
+            return minDist;
+        };
+
+        // Context-Sensitive Evasion (E key)
+        if (this.canJump && Input.keys.evade) {
+            const nearestDist = _findNearestOpponentDist();
             this.isEvading = true;
-            this.evasionTimer = 0.3; // 0.3 seconds of invulnerability
-            this.lastEvasion = 'juke';
 
-            const jukeDir = Input.keys.q ? -1 : 1;
-            const jukeVector = new THREE.Vector3().copy(right).multiplyScalar(jukeDir * 35);
+            if (nearestDist < 4) {
+                // Spin Move — opponent is close
+                this.evasionTimer = 0.4;
+                this.lastEvasion = 'spin';
 
-            this.body.velocity.x = jukeVector.x;
-            this.body.velocity.z = jukeVector.z;
-            Input.keys.q = false; // Consume input
-            Input.keys.e = false;
-            return;
-        }
+                // Beach poor footing check
+                if (currentSurface === 'beach') {
+                    const agility = this.archetype.agility || 10;
+                    if (Math.random() * 20 > agility) {
+                        // Poor footing — cancel evade, drop velocity
+                        this.body.velocity.x = 0;
+                        this.body.velocity.z = 0;
+                        this.evasionTimer = 0.5; // Stumble recovery
+                        this.lastEvasion = 'stumble';
+                        Input.keys.evade = false;
+                        return;
+                    }
+                }
 
-        // Spin Move
-        if (this.canJump && Input.keys.f) {
-            this.isEvading = true;
-            this.evasionTimer = 0.4;
-            this.lastEvasion = 'spin';
-            // Slight forward burst
-            this.body.velocity.x += forward.x * 30;
-            this.body.velocity.z += forward.z * 30;
-            Input.keys.f = false;
+                this.body.velocity.x += forward.x * 30;
+                this.body.velocity.z += forward.z * 30;
+            } else {
+                // Juke — opponent is far, lateral cut
+                this.evasionTimer = 0.3;
+                this.lastEvasion = 'juke';
+
+                // Beach poor footing check
+                if (currentSurface === 'beach') {
+                    const agility = this.archetype.agility || 10;
+                    if (Math.random() * 20 > agility) {
+                        this.body.velocity.x = 0;
+                        this.body.velocity.z = 0;
+                        this.evasionTimer = 0.5;
+                        this.lastEvasion = 'stumble';
+                        Input.keys.evade = false;
+                        return;
+                    }
+                }
+
+                // Default juke to the right; camera-relative
+                const jukeVector = new THREE.Vector3().copy(right).multiplyScalar(35);
+                this.body.velocity.x = jukeVector.x;
+                this.body.velocity.z = jukeVector.z;
+            }
+
+            if (Input.keys.style) this.isStyling = true;
+            Input.keys.evade = false; // Consume input
             return;
         }
 
@@ -240,10 +290,20 @@ export class PlayerCharacter {
             this.isEvading = true;
             this.evasionTimer = 0.6;
             this.lastEvasion = 'dive';
-            // Explosive forward lunge
-            this.body.velocity.x = forward.x * 35;
-            this.body.velocity.z = forward.z * 35;
-            this.body.velocity.y = 2; // Slight upward for dive animation feel
+
+            if (Input.keys.style) {
+                // Defensive Power Tackle — faster but locked rotation
+                this.isStyling = true;
+                this.rotationLocked = true;
+                this.body.velocity.x = forward.x * 35 * 1.5;
+                this.body.velocity.z = forward.z * 35 * 1.5;
+                this.body.velocity.y = 2;
+            } else {
+                // Normal dive tackle
+                this.body.velocity.x = forward.x * 35;
+                this.body.velocity.z = forward.z * 35;
+                this.body.velocity.y = 2;
+            }
             Input.mouse.leftDown = false; // Consume
             return;
         }
@@ -255,6 +315,7 @@ export class PlayerCharacter {
                 // Stiff Arm — keeps momentum, blocks tackle via evasion
                 this.evasionTimer = 0.5;
                 this.lastEvasion = 'stiff_arm';
+                if (Input.keys.style) this.isStyling = true;
             } else {
                 // Rip Move — shed blocks with a burst forward
                 this.evasionTimer = 0.5;
@@ -283,9 +344,10 @@ export class PlayerCharacter {
 
             // Apply street arcade acceleration
             const speedMultiplier = this.isGamebreakerActive ? 2.0 : 1.0;
+            const surfaceDrag = currentSurface === 'beach' ? 0.85 : 1.0;
             // Sprint only works if team has turbo remaining
             const canSprint = Input.keys.shift && this._turboRef && this._turboRef() > 0;
-            const activeSpeed = (canSprint ? this.speed * 2.2 : this.speed) * speedMultiplier;
+            const activeSpeed = (canSprint ? this.speed * 2.2 : this.speed) * speedMultiplier * surfaceDrag;
 
             // Direct velocity set — fixed multiplier for frame-independent arcade speed
             this.body.velocity.x = moveDirection.x * activeSpeed * 0.4;
@@ -293,6 +355,9 @@ export class PlayerCharacter {
 
             // Store velocity vector for visual rotation
             this.velocity.copy(moveDirection);
+
+            // Style modifier while moving
+            if (Input.keys.style) this.isStyling = true;
         } else {
             // High friction stop — cut on a dime
             this.body.velocity.x *= 0.3;
@@ -300,9 +365,6 @@ export class PlayerCharacter {
         }
 
         // Jumping & Hurdling
-        // We ensure snapping is clean by checking a global flag or tracking
-        // But since we removed the handleInput call from update, the issue the user saw
-        // might have just been my manual test. Let's ensure this is clean.
         if (Input.keys.space && !window.blockJumpThisFrame) {
             if (this.canJump) {
                 // Hurdle if sprinting
@@ -317,12 +379,11 @@ export class PlayerCharacter {
                 this.canJump = false;
             } else {
                 // Mid-air: check for WALL KICK
-                // Simplistic bounding box check against known wall limits (X = +/- 30)
                 const px = this.body.position.x;
-                if ((px > 27 || px < -27) && this.body.velocity.y < 5) { // Near wall, falling down
+                if ((px > 27 || px < -27) && this.body.velocity.y < 5) {
                     const kickDir = px > 0 ? -1 : 1;
                     this.body.velocity.y = this.jumpPower * 1.2;
-                    this.body.velocity.x = kickDir * 20; // Kick off wall inward
+                    this.body.velocity.x = kickDir * 20;
                     console.log("WALL JUMP!");
                 }
             }

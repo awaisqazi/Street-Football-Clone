@@ -5,7 +5,7 @@ import { createEnvironment } from './environment.js';
 import { Input } from './input.js';
 import { PlayerCharacter } from './character.js';
 import { Football } from './ball.js';
-import { setupTackling } from './tackle.js';
+import { setupTackling, updateBlockEngagements } from './tackle.js';
 import { GameManager, GameState } from './gameFlow.js';
 import { UIManager } from './ui.js';
 import { Playbook } from './playbook.js';
@@ -39,6 +39,10 @@ let losMarker, firstDownMarker;
 export let turbo = { player: 100, cpu: 100 };
 const TURBO_DRAIN_RATE = 30;   // units per second while sprinting
 const TURBO_RECHARGE_RATE = 15; // units per second while not sprinting
+
+// Gamebreaker attribute maxing
+let gamebreakerOriginals = new Map(); // playerObj → { attr: originalVal, ... }
+const RPG_ATTRS = ['passing', 'speed_attr', 'blocking', 'agility', 'catching', 'runPower', 'carrying', 'tackling', 'coverage', 'dMoves'];
 
 // Standard 7-man street composition
 const TEAM_COMPOSITION = [
@@ -136,14 +140,87 @@ function init() {
       }
     }
 
-    // Gamebreaker Trigger
-    if (e.code === 'KeyG' && gameManager.currentState === GameState.LIVE_ACTION) {
+    // Gamebreaker Trigger — PRE_SNAP only
+    if (e.code === 'KeyG' && gameManager.currentState === GameState.PRE_SNAP) {
       if (styleManager.activateGamebreaker('player')) {
-        allPlayers.forEach(p => {
-          if (p.isPlayer || playerTeam.includes(p)) {
-            p.setGamebreaker(true);
-          }
+        // Max all RPG attributes to 20 for the entire player team
+        playerTeam.forEach(p => {
+          const saved = {};
+          RPG_ATTRS.forEach(attr => {
+            saved[attr] = p.archetype[attr];
+            p.archetype[attr] = 20;
+          });
+          gamebreakerOriginals.set(p, saved);
+          p.setGamebreaker(true);
         });
+      }
+    }
+
+    // Pre-Snap Audibles (Arrow Keys)
+    if (gameManager.currentState === GameState.PRE_SNAP) {
+      const playerOnOffense = gameManager.possession === 'player';
+
+      if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (playerOnOffense) {
+          // All Fly routes
+          const allFly = {
+            name: 'All Fly', type: 'pass', routes: [
+              { position: 'WR1', action: 'fly' }, { position: 'WR2', action: 'fly' },
+              { position: 'RB', action: 'fly' }
+            ]
+          };
+          gameManager.activePlay = allFly;
+          aiManager.assignPlay(offenseTeam, allFly, defenseTeam, true);
+        } else {
+          // Zone
+          const zone = { name: 'Zone', type: 'zone', assignments: 'drop_back' };
+          gameManager.activePlay = zone;
+          aiManager.assignPlay(defenseTeam, zone, offenseTeam, false);
+        }
+        console.log('AUDIBLE: ' + (playerOnOffense ? 'All Fly' : 'Zone'));
+      }
+
+      if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        if (playerOnOffense) {
+          // QB Draw — QB runs forward
+          const qbDraw = {
+            name: 'QB Draw', type: 'run', routes: [
+              { position: 'QB', action: 'run_forward' },
+              { position: 'OL', action: 'block' }, { position: 'RB', action: 'block' }
+            ]
+          };
+          gameManager.activePlay = qbDraw;
+          aiManager.assignPlay(offenseTeam, qbDraw, defenseTeam, true);
+        } else {
+          // Blitz LB
+          const blitz = { name: 'Blitz', type: 'blitz', assignments: 'rush_qb' };
+          gameManager.activePlay = blitz;
+          aiManager.assignPlay(defenseTeam, blitz, offenseTeam, false);
+        }
+        console.log('AUDIBLE: ' + (playerOnOffense ? 'QB Draw' : 'Blitz'));
+      }
+
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        e.preventDefault();
+        if (playerOnOffense) {
+          // RB blocks
+          const rbBlock = {
+            name: 'RB Block', type: 'pass', routes: [
+              { position: 'WR1', action: 'slant' }, { position: 'WR2', action: 'curl' },
+              { position: 'RB', action: 'block' }
+            ]
+          };
+          gameManager.activePlay = rbBlock;
+          aiManager.assignPlay(offenseTeam, rbBlock, defenseTeam, true);
+        } else {
+          // Man
+          const man = { name: 'Man', type: 'man', assignments: 'cover_closest' };
+          gameManager.activePlay = man;
+          aiManager.assignPlay(defenseTeam, man, offenseTeam, false);
+        }
+        console.log('AUDIBLE: ' + (playerOnOffense ? 'RB Block' : 'Man'));
       }
     }
   });
@@ -206,6 +283,15 @@ function startPlayCycle() {
   // Assign team roles dynamically
   offenseTeam.forEach(p => { p.team = 'offense'; p.isDown = false; });
   defenseTeam.forEach(p => { p.team = 'defense'; p.isDown = false; });
+
+  // Reset block engagement state for all players
+  allPlayers.forEach(p => {
+    p.blockEngaged = false;
+    p.engagedWith = null;
+    p.blockShedTaps = 0;
+    p.blockShedTimer = 0;
+    p.defenseRole = null;
+  });
 
   // Assign pass keys to non-QB offensive players
   offenseTeam.forEach((p, i) => {
@@ -306,7 +392,8 @@ function attemptPassToKey(key, isLob) {
   );
 
   lastThrower = ball.carrier; // Remember who threw it
-  ball.pass(leadPos, isLob);
+  const qbPassing = ball.carrier.archetype.passing || 20;
+  ball.pass(leadPos, isLob, qbPassing);
   passFlightTimer = 0.3; // 0.3 second grace period for ball to travel
 
   // Do NOT switch control here — let the receiver's AI continue running
@@ -358,7 +445,30 @@ function animate() {
 
   // Quick hack state bridge
   if (gameManager.currentState === GameState.POST_PLAY_DEAD) {
-    // It handles its own reset timeout now wait
+    // Restore Gamebreaker-maxed attributes
+    if (gamebreakerOriginals.size > 0) {
+      for (const [p, saved] of gamebreakerOriginals) {
+        RPG_ATTRS.forEach(attr => {
+          p.archetype[attr] = saved[attr];
+        });
+        p.setGamebreaker(false);
+      }
+      gamebreakerOriginals.clear();
+    }
+
+    // If this was a PAT play that failed (carrier tackled), end it
+    if (gameManager.isPAT && ball.carrier && ball.carrier.isDown) {
+      gameManager.endPATPlay();
+    }
+  }
+
+  // PAT Selection state — show menu and set up PAT play
+  if (gameManager.currentState === GameState.PAT_SELECTION && uiManager.patMenu.style.display === 'none') {
+    uiManager.showPATMenu((choice) => {
+      gameManager.startPAT(choice);
+      // Re-use startPlayCycle to position players and show play selection
+      startPlayCycle();
+    });
   }
 
   // Are we resetting from PLAY_SELECTION? 
@@ -382,7 +492,7 @@ function animate() {
     // Players moving
     for (let p of allPlayers) {
       if (gameManager.currentState === GameState.LIVE_ACTION) {
-        if (p.isPlayer) p.handleInput(dt, camera);
+        if (p.isPlayer) p.handleInput(dt, camera, allPlayers);
         p.update(dt, camera);
       } else if (p.isPlayer) {
         // Pre-snap logic
@@ -414,6 +524,9 @@ function animate() {
     // AI
     if (gameManager.currentState === GameState.LIVE_ACTION) {
       aiManager.update(allPlayers, dt, gameManager, ball);
+
+      // Block engagement & shedding update
+      updateBlockEngagements(allPlayers, dt, ball, styleManager);
     }
 
     // Check for passing in the main loop if we are LIVE
@@ -464,7 +577,8 @@ function animate() {
           );
 
           lastThrower = carrier;
-          ball.pass(leadPos, true); // Always lob for pitches
+          const pitchPassing = carrier.archetype.passing || 20;
+          ball.pass(leadPos, true, pitchPassing); // Always lob for pitches
           passFlightTimer = 0.3;
           console.log("LATERAL!");
         }
@@ -481,33 +595,70 @@ function animate() {
 
     // Catching & Incomplete Logic (Pillar 5) — only check after flight grace period
     if (gameManager.currentState === GameState.LIVE_ACTION && !ball.isHeld && passFlightTimer <= 0) {
-      // Check for catches
+      // Manual Catch — players must press Jump (Space) near the ball
+      const candidates = [];
       for (let p of allPlayers) {
-        if (p === lastThrower) continue; // Thrower can't catch their own pass
-        // Cylinder hitbox: 4 units on XZ plane, ball Y between 0 and player head + 6
+        if (p === lastThrower) continue;
         const dx = p.mesh.position.x - ball.mesh.position.x;
         const dz = p.mesh.position.z - ball.mesh.position.z;
         const dist2D = Math.sqrt(dx * dx + dz * dz);
         const ballY = ball.mesh.position.y;
         const playerY = p.mesh.position.y;
         if (dist2D < 4.0 && ballY >= 0 && ballY <= playerY + 6) {
-          ball.snapToCarrier(p);
-          console.log("PASS CAUGHT by", p.team);
-
-          if (p.team !== "offense") {
-            // Turnover on Interception!
-            gameManager.flipPossession();
-            console.log("INTERCEPTION!");
+          // Player-controlled: must be pressing Jump; AI: auto-contest
+          if (p.isPlayer ? Input.keys.space : true) {
+            candidates.push(p);
           }
-
-          // Switch user control to the catcher if their team now has possession
-          if ((p.team === 'offense' && gameManager.possession === 'player') ||
-            (p.team === 'defense' && gameManager.possession === 'cpu')) {
-            allPlayers.forEach(ap => ap.isPlayer = false);
-            p.isPlayer = true;
-          }
-          break;
         }
+      }
+
+      if (candidates.length === 1) {
+        // Uncontested catch
+        const catcher = candidates[0];
+        ball.snapToCarrier(catcher);
+        console.log("PASS CAUGHT by", catcher.team);
+
+        if (catcher.team !== 'offense') {
+          gameManager.flipPossession();
+          console.log("INTERCEPTION!");
+        }
+
+        allPlayers.forEach(ap => ap.isPlayer = false);
+        catcher.isPlayer = true;
+        if (catcher.isPlayer) Input.keys.space = false; // Consume jump
+      } else if (candidates.length > 1) {
+        // Contested catch — dice roll
+        let bestPlayer = null;
+        let bestRoll = -Infinity;
+
+        for (const p of candidates) {
+          let roll;
+          if (p.team === 'offense') {
+            // Receiver: catching
+            roll = Math.random() * 20 + (p.archetype.catching || 10);
+          } else {
+            // Defender: max of catching and coverage
+            const catching = p.archetype.catching || 10;
+            const coverage = p.archetype.coverage || 10;
+            roll = Math.random() * 20 + Math.max(catching, coverage);
+          }
+          if (roll > bestRoll) {
+            bestRoll = roll;
+            bestPlayer = p;
+          }
+        }
+
+        ball.snapToCarrier(bestPlayer);
+        console.log("CONTESTED CATCH won by", bestPlayer.team);
+
+        if (bestPlayer.team !== 'offense') {
+          gameManager.flipPossession();
+          console.log("INTERCEPTION!");
+        }
+
+        allPlayers.forEach(ap => ap.isPlayer = false);
+        bestPlayer.isPlayer = true;
+        Input.keys.space = false; // Consume jump
       }
 
       // Check for incomplete pass (hits ground before caught)
@@ -551,6 +702,44 @@ function animate() {
       updatePassIcons();
     } else {
       document.getElementById('pass-icons').innerHTML = ''; // Clear when dead
+    }
+
+    // --- Out of Bounds ---
+    // Carrier OOB: sideline at |X| > 28
+    if (gameManager.currentState === GameState.LIVE_ACTION && ball.isHeld && ball.carrier) {
+      const carrierX = ball.carrier.body.position.x;
+      if (Math.abs(carrierX) > 28) {
+        if (audioManager) audioManager.playWhistle();
+        console.log("OUT OF BOUNDS at X:", carrierX);
+
+        if (gameManager.isPAT) {
+          gameManager.currentState = GameState.POST_PLAY_DEAD;
+          gameManager.endPATPlay();
+        } else {
+          gameManager.endPlay(ball.carrier.body.position.z);
+        }
+      }
+    }
+
+    // Fumble OOB: loose ball rolls past sideline
+    if (gameManager.currentState === GameState.LIVE_ACTION && ball.isFumbled) {
+      const ballX = ball.body.position.x;
+      if (Math.abs(ballX) > 28) {
+        if (audioManager) audioManager.playWhistle();
+        console.log("FUMBLE OUT OF BOUNDS at X:", ballX);
+
+        // Return possession to the fumbling team (current possession holder)
+        ball.isFumbled = false;
+        ball.body.type = 0; // CANNON.Body.STATIC
+        ball.body.velocity.set(0, 0, 0);
+
+        if (gameManager.isPAT) {
+          gameManager.currentState = GameState.POST_PLAY_DEAD;
+          gameManager.endPATPlay();
+        } else {
+          gameManager.endPlay(ball.body.position.z);
+        }
+      }
     }
 
     // Scoring logic (Phase 5)

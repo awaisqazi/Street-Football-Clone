@@ -4,7 +4,8 @@ export const GameState = {
     PRE_SNAP: 1,
     LIVE_ACTION: 2,
     POST_PLAY_DEAD: 3,
-    GAME_OVER: 4
+    GAME_OVER: 4,
+    PAT_SELECTION: 5
 };
 
 import { Playbook } from './playbook.js';
@@ -24,6 +25,11 @@ export class GameManager {
         this.winScore = 21; // First to 21 street rules
 
         this.activePlay = null; // Stores what the user selected
+
+        // PAT state
+        this.isPAT = false;
+        this.patTeam = null;
+        this.patPoints = 0;
     }
 
     updateHUD() {
@@ -136,12 +142,46 @@ export class GameManager {
 
         if (isTD) {
             this.currentState = GameState.POST_PLAY_DEAD;
-            this.score[this.possession] += 7;
+
+            if (this.isPAT) {
+                // PAT attempt succeeded — award the extra points
+                this.score[this.patTeam] += this.patPoints;
+                this.isPAT = false;
+
+                if (uiManager) uiManager.showTouchdown(this.patTeam);
+                if (audioManager) {
+                    audioManager.playWhistle();
+                    setTimeout(() => audioManager.playWhistle(), 300);
+                }
+
+                if (this.score[this.patTeam] >= this.winScore) {
+                    this.currentState = GameState.GAME_OVER;
+                    if (uiManager) uiManager.showGameOver(this.patTeam === 'player' ? "YOU WIN" : "CPU WINS");
+                    return true;
+                }
+
+                this.lineOfScrimmageZ = 0;
+                this.flipPossession();
+                this.updateHUD();
+
+                setTimeout(() => {
+                    if (this.currentState !== GameState.GAME_OVER) {
+                        if (uiManager) uiManager.hideTouchdown();
+                        this.currentState = GameState.PLAY_SELECTION;
+                    }
+                }, 2500);
+
+                return true;
+            }
+
+            // Regular touchdown — 6 points, then PAT selection
+            this.score[this.possession] += 6;
+            this.patTeam = this.possession;
 
             if (uiManager) uiManager.showTouchdown(this.possession);
             if (audioManager) {
                 audioManager.playWhistle();
-                setTimeout(() => audioManager.playWhistle(), 300); // Double blow for score
+                setTimeout(() => audioManager.playWhistle(), 300);
             }
 
             if (this.score[this.possession] >= this.winScore) {
@@ -150,20 +190,48 @@ export class GameManager {
                 return true;
             }
 
-            this.lineOfScrimmageZ = 0; // Reset to center
-            this.flipPossession();     // Kickoff (give to other team)
-
             this.updateHUD();
 
+            // Transition to PAT selection after a short delay
             setTimeout(() => {
                 if (this.currentState !== GameState.GAME_OVER) {
                     if (uiManager) uiManager.hideTouchdown();
-                    this.currentState = GameState.PLAY_SELECTION;
+                    this.currentState = GameState.PAT_SELECTION;
                 }
-            }, 3500);
+            }, 2500);
 
             return true;
         }
         return false;
+    }
+
+    startPAT(choice) {
+        this.isPAT = true;
+        if (choice === 'run') {
+            this.patPoints = 1;
+            // Spot at 5-yard line toward the endzone
+            this.lineOfScrimmageZ = this.patTeam === 'player' ? -40 : 40;
+        } else {
+            this.patPoints = 2;
+            // Spot at 10-yard line
+            this.lineOfScrimmageZ = this.patTeam === 'player' ? -35 : 35;
+        }
+        this.down = 1;
+        this.yardsToGlow = 10;
+        this.firstDownZ = this.patTeam === 'player' ? this.lineOfScrimmageZ - 10 : this.lineOfScrimmageZ + 10;
+    }
+
+    endPATPlay() {
+        // PAT attempt failed (tackled before endzone)
+        this.isPAT = false;
+        this.lineOfScrimmageZ = 0;
+        this.flipPossession();
+        this.updateHUD();
+
+        setTimeout(() => {
+            if (this.currentState !== GameState.GAME_OVER) {
+                this.currentState = GameState.PLAY_SELECTION;
+            }
+        }, 2000);
     }
 }

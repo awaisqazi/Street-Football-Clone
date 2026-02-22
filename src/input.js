@@ -6,9 +6,6 @@ export const Input = {
         a: false,
         s: false,
         d: false,
-        q: false, // Juke Left
-        e: false, // Juke Right
-        f: false, // Spin
         g: false, // Activate Gamebreaker
         z: false, // Pass receiver 1
         x: false, // Pass receiver 2
@@ -19,6 +16,8 @@ export const Input = {
         space: false, // Jump / Hurdle
         shift: false, // Sprint / Tackle modifier
         alt: false,   // Pitch / Lateral
+        evade: false,  // Context-sensitive evasion (E)
+        style: false,  // Style modifier (Left Ctrl)
     },
     keyPressStart: {},       // Timestamp when a pass key was pressed
     keyReleasedDuration: {}, // Duration (ms) a pass key was held before release
@@ -35,6 +34,8 @@ export const Input = {
             if (e.key === 'Shift') this.keys.shift = true;
             if (e.key === ' ') this.keys.space = true;
             if (e.key === 'Alt') { this.keys.alt = true; e.preventDefault(); }
+            if (key === 'e') this.keys.evade = true;
+            if (e.code === 'ControlLeft') { this.keys.style = true; e.preventDefault(); }
 
             // Track press start time for pass keys (only on initial press)
             if (PASS_KEYS.includes(key) && !this.keyPressStart[key]) {
@@ -48,6 +49,8 @@ export const Input = {
             if (e.key === 'Shift') this.keys.shift = false;
             if (e.key === ' ') this.keys.space = false;
             if (e.key === 'Alt') this.keys.alt = false;
+            if (key === 'e') this.keys.evade = false;
+            if (e.code === 'ControlLeft') this.keys.style = false;
 
             // Calculate hold duration for pass keys
             if (PASS_KEYS.includes(key) && this.keyPressStart[key]) {

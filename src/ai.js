@@ -9,7 +9,8 @@ export const AIState = {
     MAN_COVERAGE: 2,
     BLITZ: 3,
     CPU_QB: 4,
-    BLOCK: 5
+    BLOCK: 5,
+    ENGAGED_BLOCK: 6
 };
 
 // Map playbook position labels → team composition indices
@@ -138,15 +139,42 @@ export class AIManager {
             });
 
         } else {
-            // --- DEFENSE ---
+            // --- DEFENSE (Ironman Role Mapping) ---
+            // Team comp indices: [QB(0), RB(1), WR(2), WR(3), OL(4), LB(5), DB(6)]
+            // Map by offensive position to defensive role
             players.forEach((p, index) => {
+                const posName = p.archetype.name || '';
+
                 if (play && play.type === 'blitz') {
+                    // Full blitz override
                     p.aiState = AIState.BLITZ;
                     p.targetPlayer = opponentTeam.find(o => o.isPlayer) || opponentTeam[0];
-                } else {
-                    // Man coverage — map each defender to an offensive player by index
+                    p.defenseRole = 'blitz';
+                } else if (posName === 'Offensive Lineman') {
+                    // OL plays DL — rush the QB/carrier
+                    p.aiState = AIState.BLITZ;
+                    p.targetPlayer = opponentTeam[0]; // Target QB
+                    p.defenseRole = 'dl_rush';
+                } else if (posName === 'Wide Receiver') {
+                    // WR plays DB — man coverage on matched opponent
                     p.aiState = AIState.MAN_COVERAGE;
                     p.targetPlayer = opponentTeam[index % opponentTeam.length];
+                    p.defenseRole = 'db_man';
+                } else if (posName === 'Running Back') {
+                    // RB plays LB — zone coverage with looser cushion
+                    p.aiState = AIState.MAN_COVERAGE;
+                    p.targetPlayer = opponentTeam[index % opponentTeam.length];
+                    p.defenseRole = 'lb_zone';
+                } else if (posName === 'Quarterback') {
+                    // QB plays safety — zone, cover nearest receiver
+                    p.aiState = AIState.MAN_COVERAGE;
+                    p.targetPlayer = opponentTeam[index % opponentTeam.length];
+                    p.defenseRole = 'safety';
+                } else {
+                    // LB, DB — natural defenders, keep standard man coverage
+                    p.aiState = AIState.MAN_COVERAGE;
+                    p.targetPlayer = opponentTeam[index % opponentTeam.length];
+                    p.defenseRole = posName.toLowerCase().includes('linebacker') ? 'lb' : 'db';
                 }
             });
         }
@@ -255,6 +283,10 @@ export class AIManager {
                 // Idle players slow to a stop
                 p.body.velocity.x *= 0.3;
                 p.body.velocity.z *= 0.3;
+            } else if (p.aiState === AIState.ENGAGED_BLOCK) {
+                // Locked in block engagement — suppress AI movement
+                p.body.velocity.x *= 0.1;
+                p.body.velocity.z *= 0.1;
             }
 
             // --- CPU QB LOGIC ---

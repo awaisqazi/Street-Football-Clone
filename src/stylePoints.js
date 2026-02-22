@@ -18,8 +18,28 @@ export class StyleManager {
         this.uiLayer = document.getElementById('ui-layer');
     }
 
-    addStylePoints(team, amount, label, worldPos) {
+    addStylePoints(team, amount, label, worldPos, player, allPlayers) {
         if (this.gbActive[team]) return; // Don't gain points while active
+
+        // Only award style points if the player is actively styling
+        if (player && !player.isStyling) return;
+
+        // Proximity multiplier — riskier styling = more points
+        if (player && allPlayers) {
+            let minDist = Infinity;
+            const myPos = player.body.position;
+            for (const p of allPlayers) {
+                if (p === player || p.team === player.team) continue;
+                const dx = p.body.position.x - myPos.x;
+                const dz = p.body.position.z - myPos.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < minDist) minDist = dist;
+            }
+            if (minDist <= 3) amount = Math.round(amount * 3);
+            else if (minDist <= 6) amount = Math.round(amount * 2);
+            else if (minDist <= 10) amount = Math.round(amount * 1.5);
+            // else 1× (no change)
+        }
 
         this.score[team] += amount;
         if (this.score[team] > this.gbThreshold) {

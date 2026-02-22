@@ -9,6 +9,23 @@ export class UIManager {
         this.rosterMenu = document.getElementById('roster-menu');
         this.gameOverMenu = document.getElementById('game-over');
         this.touchdownBanner = document.getElementById('touchdown-banner');
+        this.patMenu = document.getElementById('pat-menu');
+    }
+
+    showPATMenu(onChoice) {
+        this.patMenu.style.display = 'flex';
+        document.getElementById('pat-run-btn').onclick = () => {
+            this.hidePATMenu();
+            onChoice('run');
+        };
+        document.getElementById('pat-pass-btn').onclick = () => {
+            this.hidePATMenu();
+            onChoice('pass');
+        };
+    }
+
+    hidePATMenu() {
+        this.patMenu.style.display = 'none';
     }
 
     showPlaybook(plays, onSelectCallback) {

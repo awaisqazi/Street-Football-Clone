@@ -61,7 +61,7 @@ export class Football {
         this.body.collisionFilterMask = 0;
     }
 
-    pass(targetVector3, isLob = false) {
+    pass(targetVector3, isLob = false, passingAttr = 20) {
         if (!this.isHeld || !this.carrier) return;
 
         this.isHeld = false;
@@ -84,15 +84,20 @@ export class Football {
         direction.normalize();
 
         // Lob passes go high and slow. Bullet passes go fast and flat.
-        const heightY = isLob ? Math.max(15, distance * 0.4) : Math.max(3, distance * 0.1);
+        let heightY = isLob ? Math.max(15, distance * 0.4) : Math.max(3, distance * 0.1);
+
+        // RPG attribute: low passing (< 8) = high pickable lob
+        const isWeakArm = passingAttr < 8;
+        if (isWeakArm) heightY *= 2;
 
         // Simple arcade physics math for velocity required to hit target
         const gravity = Math.abs(world.gravity.y);
         const timeToDip = Math.sqrt((heightY * 2) / gravity);
 
         // Calculate required forward velocity to cross distance in that time
-        // Roughly simulating a clean arc
-        const forwardSpeed = distance / (timeToDip * 2);
+        let forwardSpeed = distance / (timeToDip * 2);
+        if (isWeakArm) forwardSpeed *= 0.7; // 30% slower for weak arms
+
         const upSpeed = gravity * timeToDip;
 
         this.body.velocity.set(
@@ -102,8 +107,6 @@ export class Football {
         );
 
         // Add classic spiral spin
-        // Convert Three direction to CANNON Vec3 for cross product math if we wanted to be dynamic, 
-        // but a hardcoded Z/X spiral is fine for street arcade
         this.body.angularVelocity.set(direction.z * 10, 0, -direction.x * 10);
     }
 

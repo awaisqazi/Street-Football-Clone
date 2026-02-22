@@ -214,7 +214,7 @@ export class PlayerCharacter {
             this.lastEvasion = 'juke';
 
             const jukeDir = Input.keys.q ? -1 : 1;
-            const jukeVector = new THREE.Vector3().copy(right).multiplyScalar(jukeDir * 20);
+            const jukeVector = new THREE.Vector3().copy(right).multiplyScalar(jukeDir * 35);
 
             this.body.velocity.x = jukeVector.x;
             this.body.velocity.z = jukeVector.z;
@@ -229,9 +229,22 @@ export class PlayerCharacter {
             this.evasionTimer = 0.4;
             this.lastEvasion = 'spin';
             // Slight forward burst
-            this.body.velocity.x += forward.x * 15;
-            this.body.velocity.z += forward.z * 15;
+            this.body.velocity.x += forward.x * 30;
+            this.body.velocity.z += forward.z * 30;
             Input.keys.f = false;
+            return;
+        }
+
+        // Dive Tackle (Defense only — Left Click)
+        if (this.team === 'defense' && Input.mouse.leftDown && this.canJump) {
+            this.isEvading = true;
+            this.evasionTimer = 0.6;
+            this.lastEvasion = 'dive';
+            // Explosive forward lunge
+            this.body.velocity.x = forward.x * 35;
+            this.body.velocity.z = forward.z * 35;
+            this.body.velocity.y = 2; // Slight upward for dive animation feel
+            Input.mouse.leftDown = false; // Consume
             return;
         }
 
@@ -254,18 +267,18 @@ export class PlayerCharacter {
             const speedMultiplier = this.isGamebreakerActive ? 2.0 : 1.0;
             // Sprint only works if team has turbo remaining
             const canSprint = Input.keys.shift && this._turboRef && this._turboRef() > 0;
-            const activeSpeed = (canSprint ? this.speed * 1.5 : this.speed) * speedMultiplier;
+            const activeSpeed = (canSprint ? this.speed * 2.2 : this.speed) * speedMultiplier;
 
-            // We alter the Cannon body velocity directly for snappy arcade response instead of using applyForce
-            this.body.velocity.x = moveDirection.x * activeSpeed * deltaTime * 10;
-            this.body.velocity.z = moveDirection.z * activeSpeed * deltaTime * 10;
+            // Direct velocity set — fixed multiplier for frame-independent arcade speed
+            this.body.velocity.x = moveDirection.x * activeSpeed * 0.4;
+            this.body.velocity.z = moveDirection.z * activeSpeed * 0.4;
 
             // Store velocity vector for visual rotation
             this.velocity.copy(moveDirection);
         } else {
-            // High friction stop
-            this.body.velocity.x *= 0.5;
-            this.body.velocity.z *= 0.5;
+            // High friction stop — cut on a dime
+            this.body.velocity.x *= 0.3;
+            this.body.velocity.z *= 0.3;
         }
 
         // Jumping & Hurdling

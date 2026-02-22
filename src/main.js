@@ -293,7 +293,7 @@ function updateCamera() {
 let passFlightTimer = 0; // Grace period so ball can actually travel before catches
 let lastThrower = null;  // Track who threw to exclude them from catching
 
-function attemptPassToKey(key) {
+function attemptPassToKey(key, isLob) {
   const receiver = offenseTeam.find(p => p.passKey === key);
   if (!receiver) return;
 
@@ -306,8 +306,7 @@ function attemptPassToKey(key) {
   );
 
   lastThrower = ball.carrier; // Remember who threw it
-  const isLob = Input.keys.shift;
-  ball.pass(leadPos, isLob); // Let ball.js handle the math
+  ball.pass(leadPos, isLob);
   passFlightTimer = 0.3; // 0.3 second grace period for ball to travel
 
   // Do NOT switch control here — let the receiver's AI continue running
@@ -420,8 +419,11 @@ function animate() {
     // Check for passing in the main loop if we are LIVE
     if (gameManager.currentState === GameState.LIVE_ACTION) {
       for (let k of passKeys) {
-        if (Input.keys[k] && ball.isHeld && ball.carrier && ball.carrier.isPlayer) {
-          attemptPassToKey(k);
+        if (Input.keyReleasedDuration[k] !== undefined && ball.isHeld && ball.carrier && ball.carrier.isPlayer) {
+          const duration = Input.keyReleasedDuration[k];
+          const isLob = duration < 250; // Tap = lob, Hold = bullet
+          delete Input.keyReleasedDuration[k];
+          attemptPassToKey(k, isLob);
           break; // Only one throw per frame
         }
       }

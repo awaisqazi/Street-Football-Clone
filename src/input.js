@@ -1,3 +1,5 @@
+const PASS_KEYS = ['z', 'x', 'c', 'v', 'b', 'n'];
+
 export const Input = {
     keys: {
         w: false,
@@ -17,9 +19,11 @@ export const Input = {
         space: false, // Jump / Hurdle
         shift: false, // Sprint / Tackle modifier
     },
+    keyPressStart: {},       // Timestamp when a pass key was pressed
+    keyReleasedDuration: {}, // Duration (ms) a pass key was held before release
     mouse: {
-        leftDown: false, // Bullet pass / Hit stick
-        rightDown: false, // Lob pass
+        leftDown: false,
+        rightDown: false,
         position: { x: 0, y: 0 }
     },
 
@@ -29,6 +33,11 @@ export const Input = {
             if (this.keys.hasOwnProperty(key)) this.keys[key] = true;
             if (e.key === 'Shift') this.keys.shift = true;
             if (e.key === ' ') this.keys.space = true;
+
+            // Track press start time for pass keys (only on initial press)
+            if (PASS_KEYS.includes(key) && !this.keyPressStart[key]) {
+                this.keyPressStart[key] = performance.now();
+            }
         });
 
         window.addEventListener('keyup', (e) => {
@@ -36,6 +45,13 @@ export const Input = {
             if (this.keys.hasOwnProperty(key)) this.keys[key] = false;
             if (e.key === 'Shift') this.keys.shift = false;
             if (e.key === ' ') this.keys.space = false;
+
+            // Calculate hold duration for pass keys
+            if (PASS_KEYS.includes(key) && this.keyPressStart[key]) {
+                const duration = performance.now() - this.keyPressStart[key];
+                this.keyReleasedDuration[key] = duration;
+                delete this.keyPressStart[key];
+            }
         });
 
         window.addEventListener('mousedown', (e) => {

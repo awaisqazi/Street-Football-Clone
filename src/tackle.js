@@ -1,10 +1,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-export function setupTackling(world, players, styleManager, audioManager) {
-    // A simple collision listener to detect "hit stick" arcade tackles
-    // In a street game, a tackle is usually triggered if a player is sprinting (shift) into an opponent
-
+export function setupTackling(world, players, ball, styleManager, audioManager) {
+    // A simple collision listener to detect tackles
     world.addEventListener('beginContact', (event) => {
         const bodyA = event.bodyA;
         const bodyB = event.bodyB;
@@ -18,48 +16,67 @@ export function setupTackling(world, players, styleManager, audioManager) {
 
         if (!charA || !charB) return;
 
-        // Are they on different teams? (For now, we just assume if one is player-controlled and one isn't, they are opponents)
-        if (charA.isPlayer === charB.isPlayer) return;
+        // Ensure tackling only happens between opposing teams
+        if (charA.team === charB.team) return;
 
-        // Check for Gamebreaker auto-win
-        if (charA.isGamebreakerActive) {
-            applyArcadeKnockback(charA, charB, true);
-            if (styleManager && charA.isPlayer) styleManager.spawnFloatingPopup("GB TRUCK!", 0, charA.mesh.position);
-            return;
-        } else if (charB.isGamebreakerActive) {
-            applyArcadeKnockback(charB, charA, true);
-            if (styleManager && charB.isPlayer) styleManager.spawnFloatingPopup("GB TRUCK!", 0, charB.mesh.position);
-            return;
+        let carrier = null;
+        let tackler = null;
+
+        if (ball && ball.carrier === charA) {
+            carrier = charA;
+            tackler = charB;
+        } else if (ball && ball.carrier === charB) {
+            carrier = charB;
+            tackler = charA;
         }
 
-        // Check for Evasive Moves (Missed Tackle)
-        if (charA.isEvading) {
-            if (styleManager && charA.isPlayer) styleManager.addStylePoints('player', 1500, charA.lastEvasion.toUpperCase() + "!", charA.mesh.position);
-            return; // A dodged
-        } else if (charB.isEvading) {
-            if (styleManager && charB.isPlayer) styleManager.addStylePoints('player', 1500, charB.lastEvasion.toUpperCase() + "!", charB.mesh.position);
-            return; // B dodged
-        }
+        if (carrier && tackler) {
+            // Check for Gamebreaker auto-win
+            if (carrier.isGamebreakerActive) {
+                applyArcadeKnockback(carrier, tackler, true);
+                if (styleManager && carrier.isPlayer) styleManager.spawnFloatingPopup("GB TRUCK!", 0, carrier.mesh.position);
+                return;
+            }
 
-        // Determine who is the "Tackler"
-        // Usually, the tackler is the defense, but on offense, you can "truck" or stiff-arm.
-        // For Phase 2 sandbox, we say: if you are sprinting (velocity > threshold) and hit the other guy, you win the collision and knock them back.
+            // Check for Evasive Moves (Missed Tackle)
+            if (carrier.isEvading) {
+                if (carrier.lastEvasion !== 'hurdle' || tackler.body.velocity.y > 0) {
+                    if (styleManager && carrier.isPlayer) styleManager.addStylePoints('player', 1500, carrier.lastEvasion.toUpperCase() + "!", carrier.mesh.position);
+                    return; // Carrier dodged
+                }
+            }
 
-        const vlsSqA = charA.body.velocity.lengthSquared();
-        const vlsSqB = charB.body.velocity.lengthSquared();
-
-        const sprintThresholdSquared = 600; // Requires high speed to trigger big hit
-
-        if (vlsSqA > sprintThresholdSquared && vlsSqA > vlsSqB) {
-            // A tackles B
-            applyArcadeKnockback(charA, charB);
+            // Standard Tackle
+            carrier.isDown = true;
             if (audioManager) audioManager.playTackle();
-            if (styleManager && charA.isPlayer) styleManager.addStylePoints('player', 2500, "HIT STICK!", charA.mesh.position);
-        } else if (vlsSqB > sprintThresholdSquared && vlsSqB > vlsSqA) {
-            // B tackles A
-            applyArcadeKnockback(charB, charA);
-            if (audioManager) audioManager.playTackle();
-            if (styleManager && charB.isPlayer) styleManager.addStylePoints('player', 2500, "HIT STICK!", charB.mesh.position);
+
+            // Hit Stick logic (Exaggerated knockback for style/fumble)
+            const vlsSqTackler = tackler.body.velocity.lengthSquared();
+            if (vlsSqTackler > 600) {
+                applyArcadeKnockback(tackler, carrier);
+                if (styleManager && tackler.isPlayer) styleManager.addStylePoints('player', 2500, "HIT STICK!", tackler.mesh.position);
+            }
+        } else {
+            // Non-carrier collisions (blocking, etc.)
+            const vlsSqA = charA.body.velocity.lengthSquared();
+            const vlsSqB = charB.body.velocity.lengthSquared();
+            const sprintThresholdSquared = 600;
+
+            if (charA.isGamebreakerActive) {
+                applyArcadeKnockback(charA, charB, true);
+                return;
+            } else if (charB.isGamebreakerActive) {
+                applyArcadeKnockback(charB, charA, true);
+                return;
+            }
+
+            if (vlsSqA > sprintThresholdSquared && vlsSqA > vlsSqB) {
+                applyArcadeKnockback(charA, charB);
+                if (audioManager) audioManager.playTackle();
+            } else if (vlsSqB > sprintThresholdSquared && vlsSqB > vlsSqA) {
+                applyArcadeKnockback(charB, charA);
+                if (audioManager) audioManager.playTackle();
+            }
         }
     });
 }

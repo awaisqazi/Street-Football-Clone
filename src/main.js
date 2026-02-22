@@ -93,40 +93,27 @@ function init() {
   window.addEventListener('resize', onWindowResize);
   clock = new THREE.Clock();
 
-  // Passing logic
-  window.addEventListener('mousedown', (e) => {
-    if (gameManager.currentState !== GameState.LIVE_ACTION) return;
-    if (!ball.isHeld || !ball.carrier || !ball.carrier.isPlayer) return;
+  // Raycaster pass logic removed (Pillar 3)
 
-    const mouse = new THREE.Vector2();
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const targetVector3 = new THREE.Vector3();
-    raycaster.ray.intersectPlane(groundPlane, targetVector3);
-
-    if (targetVector3) {
-      if (e.button === 0) ball.pass(targetVector3, false);
-      else if (e.button === 2) ball.pass(targetVector3, true);
-    }
-  });
-
-  // Snapping & Gamebreaker logic
+  // Player Switching & Gamebreaker
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && gameManager.currentState === GameState.PRE_SNAP) {
-      gameManager.snapBall();
+    // Defense player switching (Pillar 2)
+    if ((e.code === 'Space' || e.code === 'Tab') && gameManager.possession === 'cpu' && gameManager.currentState === GameState.LIVE_ACTION) {
+      e.preventDefault();
 
-      // Tell AI what play we are doing (Temporary stub)
-      if (gameManager.possession === 'player') {
-        aiManager.assignPlay(offenseTeam, gameManager.activePlay, defenseTeam, true);
-        aiManager.assignPlay(defenseTeam, Playbook.defense[0], offenseTeam, false); // CPU just plays Man
-      } else {
-        aiManager.assignPlay(defenseTeam, gameManager.activePlay, offenseTeam, false);
-        aiManager.assignPlay(offenseTeam, Playbook.offense[0], defenseTeam, true); // CPU just runs
+      // Find closest defender to the ball
+      let closest = null;
+      let minDistance = Infinity;
+      defenseTeam.forEach(d => {
+        const dist = d.mesh.position.distanceToSquared(ball.mesh.position);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closest = d;
+        }
+      });
+      if (closest) {
+        allPlayers.forEach(p => p.isPlayer = false);
+        closest.isPlayer = true;
       }
     }
 
@@ -170,6 +157,7 @@ function setupTeams() {
     else if (i > 3) arch = Archetypes.ACROBAT; // WR/DB
 
     const p = new PlayerCharacter(scene, new CANNON.Vec3(0, 5, 0), arch, isQB);
+    p.team = 'offense'; // Tag for tackle logic
     // Assign pass key to receivers
     if (i > 0) p.passKey = passKeys[i - 1];
     offenseTeam.push(p);
@@ -187,11 +175,12 @@ function setupTeams() {
     const defArch = { ...arch, color: 0x0000ff };
 
     const p = new PlayerCharacter(scene, new CANNON.Vec3(0, 5, 0), defArch, isDefUser);
+    p.team = 'defense'; // Tag for tackle logic
     defenseTeam.push(p);
     allPlayers.push(p);
   }
 
-  setupTackling(world, allPlayers, styleManager, audioManager);
+  setupTackling(world, allPlayers, ball, styleManager, audioManager);
 }
 
 function startPlayCycle() {
@@ -250,38 +239,37 @@ function updateCamera() {
   // Should we film from Behind Offense or Behind Defense? Always behind Offense for now.
   const zChase = gameManager.possession === 'player' ? 35 : -35;
 
-  camera.position.set(charPos.x, charPos.y + yOffset, charPos.z + zChase);
+  const targetPos = new THREE.Vector3(charPos.x, charPos.y + yOffset, charPos.z + zChase);
 
-  const target = new THREE.Vector3(charPos.x, charPos.y, charPos.z - (zChase * 0.5));
-  camera.lookAt(target);
+  // Smooth lerp for position (Pillar 2)
+  camera.position.lerp(targetPos, 0.1);
+
+  const lookTarget = new THREE.Vector3(charPos.x, charPos.y, charPos.z - (zChase * 0.5));
+  if (!camera.lookAtTarget) camera.lookAtTarget = new THREE.Vector3().copy(lookTarget);
+
+  // Smooth lerp for lookAt as well
+  camera.lookAtTarget.lerp(lookTarget, 0.1);
+  camera.lookAt(camera.lookAtTarget);
 }
 
 function attemptPassToKey(key) {
   const receiver = offenseTeam.find(p => p.passKey === key);
   if (!receiver) return;
 
-  // Calculate throw direction towards receiver
+  // Calculate lead trajectory (shoot where they WILL be)
   const targetPos = receiver.body.position;
-  const launchVec = new CANNON.Vec3();
-  targetPos.vsub(ball.body.position, launchVec);
+  const leadPos = new CANNON.Vec3(
+    targetPos.x + receiver.body.velocity.x * 0.5,
+    targetPos.y,
+    targetPos.z + receiver.body.velocity.z * 0.5
+  );
 
-  // High arc or bullet based on distance
-  const dist = launchVec.length();
-  launchVec.normalize();
+  const isLob = Input.keys.shift;
+  ball.pass(leadPos, isLob); // Let ball.js handle the math
 
-  // Adjust Y for lob vs bullet
-  if (Input.keys.shift) { // Lob
-    launchVec.y = 1.0;
-    launchVec.scale(25 + dist * 0.5, launchVec); // Float it
-  } else { // Bullet
-    launchVec.y = 0.2;
-    launchVec.scale(40 + dist, launchVec); // Zip it
-  }
-
-  // Release ball
-  ball.isHeld = false;
-  ball.carrier = null;
-  ball.body.velocity.copy(launchVec);
+  // Switch player control instantly
+  allPlayers.forEach(p => p.isPlayer = false);
+  receiver.isPlayer = true;
 
   // Consume the input key
   Input.keys[key] = false;
@@ -376,6 +364,37 @@ function animate() {
 
     // Ball
     ball.update();
+
+    // Catching & Incomplete Logic (Pillar 5)
+    if (gameManager.currentState === GameState.LIVE_ACTION && !ball.isHeld) {
+      // Check for catches
+      for (let p of allPlayers) {
+        if (p.mesh.position.distanceToSquared(ball.mesh.position) < 4) { // ~2 meters
+          ball.snapToCarrier(p);
+          console.log("PASS CAUGHT by", p.team);
+
+          if (p.team !== "offense") {
+            // Turnover on Interception!
+            gameManager.flipPossession();
+            console.log("INTERCEPTION!");
+          }
+
+          // Switch user control to the catcher if their team now has possession
+          if ((p.team === 'offense' && gameManager.possession === 'player') ||
+            (p.team === 'defense' && gameManager.possession === 'cpu')) {
+            allPlayers.forEach(ap => ap.isPlayer = false);
+            p.isPlayer = true;
+          }
+          break;
+        }
+      }
+
+      // Check for incomplete pass (hits ground before caught)
+      if (!ball.isHeld && ball.body.position.y < 0.5) {
+        console.log("INCOMPLETE PASS!");
+        gameManager.endPlay(gameManager.lineOfScrimmageZ); // Ends play at original LOS
+      }
+    }
 
     // 2D UI Map pass icons (Phase 6)
     if (gameManager.currentState === GameState.LIVE_ACTION || gameManager.currentState === GameState.PRE_SNAP) {
